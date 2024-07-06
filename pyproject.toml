@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gs_fastcopy"
+version = "1.0-alpha1"
+description = "Optimized file transfer and compression for large files on Google Cloud Storage"
+readme = "README.md"
+authors = [{ name = "David Haley", email = "dchaley@gmail.com" }]
+license = { file = "LICENSE" }
+classifiers = [
+    "License :: OSI Approved :: Boost Software License 1.0 (BSL-1.0)",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Development Status :: 2 - Pre-Alpha",
+]
+keywords = ["file", "copy", "cloud", "storage", "google", "gcp"]
+dependencies = [
+    "google-cloud-storage",
+]
+requires-python = ">=3.7, <3.12"
+
+[project.optional-dependencies]
+dev = ["black", "bumpver", "isort", "pip-tools", "pytest"]
+
+[project.urls]
+Homepage = "https://github.com/redwoodconsulting-io/gs-fastcopy-python"
+
+[tool.pytest.ini_options]
+filterwarnings = [
+    # Google code throws a deprecation warning ... make it go away
+    "ignore:pkg_resources:DeprecationWarning:google.crc32c",
+]
