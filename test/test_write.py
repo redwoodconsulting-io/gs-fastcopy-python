@@ -14,7 +14,7 @@ builtin_run = subprocess.run
 # and writes what would've been written into a one-array
 # list (referring to state in the unit test caller).
 def build_upload_chunks_concurrently_mock(result):
-    def side_effecter(gs_uri, buffer_file_name, **kwargs):
+    def side_effecter(buffer_file_name, gs_blob, **kwargs):
         nonlocal result
 
         with open(buffer_file_name, "rb") as f:
@@ -46,7 +46,7 @@ def test_write_no_compression(mock_run):
     gs_fastcopy.transfer_manager,
     "upload_chunks_concurrently",
 )
-def test_write_wht_compression(mock_run):
+def test_write_with_compression(mock_run):
     result = [None]
 
     # Set up the mock to intercept the write to gcloud storage.
