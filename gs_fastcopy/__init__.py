@@ -15,8 +15,8 @@ import subprocess
 import tempfile
 from contextlib import contextmanager
 
+from google.cloud import storage
 from google.cloud.storage import transfer_manager
-from google.cloud.storage.blob import Blob
 
 
 @contextmanager
@@ -138,5 +138,6 @@ def write(gs_uri, max_workers=None, chunk_size=None):
         # TODO: handle errors
 
         # Parse gs_uri into a blob
-        gs_blob = Blob.from_string(gs_uri)
+        client = storage.Client()
+        gs_blob = storage.Blob.from_string(gs_uri, client=client)
         transfer_manager.upload_chunks_concurrently(buffer_file_name, gs_blob, **args)
