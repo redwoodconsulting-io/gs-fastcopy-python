@@ -34,7 +34,7 @@ Together, these provided ~70% improvement on uploading a 1.2GB file, and ~40% im
 
 `gs_fastcopy` is easy to use for reading and writing files.
 
-Without compression:
+You can use it without compression:
 
 ```python
 with gs_fastcopy.write('gs://my-bucket/my-file.npz') as f:
@@ -46,7 +46,7 @@ with gs_fastcopy.read('gs://my-bucket/my-file.npz') as f:
     b = npz['b']
 ```
 
-With compression: note that we don't use `savez_compressed`:
+`gs_fastcopy` also handles gzip compression transparently. Note that we don't use numpy's `savez_compressed`:
 
 ```python
 with gs_fastcopy.write('gs://my-bucket/my-file.npz.gz') as f:
@@ -62,9 +62,9 @@ with gs_fastcopy.read('gs://my-bucket/my-file.npz.gz') as f:
 
 * **You need a filesystem.**
 
-  Because `gs_fastcloud` uses tools that work with files, it must be able to read/write files, in particular temporary files as set up by `tempfile.TemporaryDirectory()`.
+  Because `gs_fastcopy` uses tools that work with files, it must be able to read/write a filesystem, in particular temporary files as set up by `tempfile.TemporaryDirectory()` [[python docs](https://docs.python.org/3/library/tempfile.html#tempfile.TemporaryDirectory)].
 
-  This is surprisingly versatile, even "very" serverless environments like Cloud Functions present an in-memory file system.
+  This is surprisingly versatile: even "very" serverless environments like Cloud Functions present an in-memory file system.
 
 * **You need the `gcloud` SDK on your path.**
 
@@ -72,11 +72,15 @@ with gs_fastcopy.read('gs://my-bucket/my-file.npz.gz') as f:
 
   `gs_fastcloud` uses `gcloud` to download files. 
 
-  [#2](https://github.com/redwoodconsulting-io/gs-fastcopy-python/issues/2) considers falling back to Python API downloads.
+  Issue [#2](https://github.com/redwoodconsulting-io/gs-fastcopy-python/issues/2) considers falling back to Python API downloads if the specialized tools aren't available.
 
 * **You need enough disk space for the compressed & uncompressed files, together.**
 
-  Because `gs_fastcloud` writes the (un)compressed file to disk while (de)compressing it, the file system needs to accommodate both files before the operation completes.
+  Because `gs_fastcloud` writes the (un)compressed file to disk while (de)compressing it, the file system needs to accommodate both files while the operation is in progress.
+  
+  * Reads from Cloud: (1) fetch to temp file; (2) decompress if gzipped; (3) stream temp file to Python app via `read()`; (4) delete the temp file
+  * Writes to Cloud: (1) app writes to temp file; (2) compress if gzipped; (3) upload temp file to Google Cloud; (4) delete the temp file
+  
 
 ## Why gs_fastcopy
 
@@ -98,9 +102,7 @@ I'm glad you asked! I initially implemented this just with `gcloud`'s [composite
 > * You should not use parallel composite uploads when uploading to a bucket that has a [retention policy](https://cloud.google.com/storage/docs/bucket-lock), because the temporary objects can't be deleted until they meet the retention period.
 > * If the bucket you upload to has [default object holds](https://cloud.google.com/storage/docs/object-holds#default-holds) enabled, you must [release the hold](https://cloud.google.com/storage/docs/holding-objects#set-object-hold) from each temporary object before you can delete it.
 
-Basically, composite uploads leverage API pieces, whereas XML multi-part is a dedicated function that understands the chunk files on GCS are special.
+Basically, composite uploads leverage independent API functions, whereas XML multi-part is a managed operation. The managed operation plays more nicely with other features like retention policies. On the other hand, because it's separate, the XML multi-part API needs additional permissions. (We may need to fall back to `gcloud` in that case!)
 
-On the other hand, the XML multi-part API does require some permissions. (We may need to fall back to `gcloud` in that case!)
-
-On top of being "weird", composite uploads are actually slower. I found this wonderful benchmarking by Christopher Madden: [High throughput file transfers with Google Cloud Storage (GCS)](https://www.beginswithdata.com/2024/02/01/google-cloud-storage-max-throughput/). TLDR, `gcloud` sliced downloads outperform the Python API, but for writes the XML multi-part API is best. (By far, if many cores are available.)
+On top of being "weird" in these ways, composite uploads are actually slower. I found this wonderful benchmarking by Christopher Madden: [High throughput file transfers with Google Cloud Storage (GCS)](https://www.beginswithdata.com/2024/02/01/google-cloud-storage-max-throughput/). TLDR, `gcloud` sliced downloads outperform the Python API, but for writes the XML multi-part API is best. (By far, if many cores are available.)
 
