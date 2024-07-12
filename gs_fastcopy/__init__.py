@@ -20,7 +20,7 @@ from google.cloud.storage import transfer_manager
 
 
 @contextmanager
-def read(gs_uri, max_workers=None, chunk_size=None):
+def read(gs_uri):
     """
     Context manager for reading a file from Google Cloud Storage.
 
@@ -46,19 +46,11 @@ def read(gs_uri, max_workers=None, chunk_size=None):
     space for the compressed file, and the decompressed file, together.
 
     :param gs_uri: The Google Cloud Storage URI to read from.
-    :param max_workers: The maximum number of workers to use. None for default.
-    :param chunk_size: The size of each chunk to download. None for default.
     """
     with tempfile.TemporaryDirectory() as tmp:
         buffer_file_name = os.path.join(
             tmp, "download.gz" if gs_uri.endswith(".gz") else "download"
         )
-
-        args = {}
-        if max_workers is not None:
-            args["max_workers"] = max_workers
-        if chunk_size is not None:
-            args["chunk_size"] = chunk_size
 
         # TODO: handle errors
         subprocess.run(["gcloud", "storage", "cp", gs_uri, buffer_file_name])
