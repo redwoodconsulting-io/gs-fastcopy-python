@@ -96,9 +96,13 @@ def write(gs_uri, max_workers=None, chunk_size=None):
     space for the uncompressed file, and the compressed file, together.
 
     :param gs_uri: The Google Cloud Storage URI to write to.
-    :param max_workers: The maximum number of workers to use. None for default.
+    :param max_workers: The maximum number of workers to use. None for default (available CPUs).
     :param chunk_size: The size of each chunk to upload. None for default.
     """
+
+    if max_workers is None:
+        max_workers = _get_available_cpus()
+
     # Create a temporary scratch directory.
     # Will be deleted when the 'with' closes.
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -121,9 +125,7 @@ def write(gs_uri, max_workers=None, chunk_size=None):
             # Add the '.gz' extension to the filename (like the tools do)
             buffer_file_name += ".gz"
 
-        args = {}
-        if max_workers is not None:
-            args["max_workers"] = max_workers
+        args = {"max_workers": max_workers}
         if chunk_size is not None:
             args["chunk_size"] = chunk_size
 
@@ -133,3 +135,15 @@ def write(gs_uri, max_workers=None, chunk_size=None):
         client = storage.Client()
         gs_blob = storage.Blob.from_string(gs_uri, client=client)
         transfer_manager.upload_chunks_concurrently(buffer_file_name, gs_blob, **args)
+
+
+# Helper function to get the number of available CPUs.
+# On many Unixen, available CPUs can be restricted
+# using schedule affinity; that is a more accurate
+# measure of available CPUs if available. If not,
+# fall back to os.cpu_count().
+def _get_available_cpus():
+    try:
+        return len(os.sched_getaffinity(0))
+    except AttributeError:
+        return os.cpu_count()

@@ -1,7 +1,6 @@
 import gzip
-import io
 import subprocess
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 
 import gs_fastcopy
 
@@ -46,13 +45,49 @@ def test_write_no_compression(mock_run):
     gs_fastcopy.transfer_manager,
     "upload_chunks_concurrently",
 )
-def test_write_with_compression(mock_run):
+def test_write_with_compression(mock_upload):
     result = [None]
 
     # Set up the mock to intercept the write to gcloud storage.
-    mock_run.side_effect = build_upload_chunks_concurrently_mock(result)
+    mock_upload.side_effect = build_upload_chunks_concurrently_mock(result)
 
     with gs_fastcopy.write("gs://my-bucket/my-file.json.gz") as f:
         f.write(JSON_STR)
 
     assert result[0] == JSON_STR
+
+
+@patch.object(
+    gs_fastcopy,
+    "_get_available_cpus",
+)
+@patch.object(
+    gs_fastcopy.transfer_manager,
+    "upload_chunks_concurrently",
+)
+def test_write_default_workers(mock_upload, mock_get_cpus):
+    mock_get_cpus.return_value = 123
+
+    with gs_fastcopy.write("gs://my-bucket/my-file.json") as f:
+        f.write(JSON_STR)
+
+    mock_upload.assert_called_once_with(
+        ANY,
+        ANY,
+        max_workers=123,
+    )
+
+
+@patch.object(
+    gs_fastcopy.transfer_manager,
+    "upload_chunks_concurrently",
+)
+def test_write_custom_workers(mock_upload):
+    with gs_fastcopy.write("gs://my-bucket/my-file.json", max_workers=16) as f:
+        f.write(JSON_STR)
+
+    mock_upload.assert_called_once_with(
+        ANY,
+        ANY,
+        max_workers=16,
+    )
