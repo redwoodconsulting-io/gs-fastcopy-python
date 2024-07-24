@@ -52,8 +52,17 @@ def read(gs_uri):
             tmp, "download.gz" if gs_uri.endswith(".gz") else "download"
         )
 
-        # TODO: handle errors
-        subprocess.run(["gcloud", "storage", "cp", gs_uri, buffer_file_name])
+        result = subprocess.run(
+            ["gcloud", "storage", "cp", gs_uri, buffer_file_name],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+        )
+
+        # TODO: handle errors better than this
+        if result.returncode != 0:
+            raise Exception(
+                f"Failed to download file from {gs_uri}: stderr: {result.stderr}"
+            )
 
         # If necessary, decompress the file before reading.
         if buffer_file_name.endswith(".gz"):
@@ -61,8 +70,17 @@ def read(gs_uri):
             # much faster when hardware is available.
             tool = "unpigz" if shutil.which("unpigz") else "gunzip"
 
-            # TODO: handle errors
-            subprocess.run([tool, buffer_file_name])
+            result = subprocess.run(
+                [tool, buffer_file_name],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+            )
+
+            # TODO: handle errors better than this
+            if result.returncode != 0:
+                raise Exception(
+                    f"Failed to extract file downloaded from {gs_uri}: stderr: {result.stderr}"
+                )
 
             # Remove the '.gz' extension from the filename (like the tools do)
             buffer_file_name = buffer_file_name[:-3]
@@ -120,7 +138,17 @@ def write(gs_uri, max_workers=None, chunk_size=None):
             tool = "pigz" if shutil.which("pigz") else "gzip"
 
             # TODO: handle errors
-            subprocess.run([tool, buffer_file_name])
+            result = subprocess.run(
+                [tool, buffer_file_name],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+            )
+
+            # TODO: handle errors better than this
+            if result.returncode != 0:
+                raise Exception(
+                    f"Failed to compress file for upload to {gs_uri}: stderr: {result.stderr}"
+                )
 
             # Add the '.gz' extension to the filename (like the tools do)
             buffer_file_name += ".gz"
@@ -129,11 +157,11 @@ def write(gs_uri, max_workers=None, chunk_size=None):
         if chunk_size is not None:
             args["chunk_size"] = chunk_size
 
-        # TODO: handle errors
-
         # Parse gs_uri into a blob
         client = storage.Client()
         gs_blob = storage.Blob.from_string(gs_uri, client=client)
+
+        # TODO: handle errors in transfer_manager
         transfer_manager.upload_chunks_concurrently(buffer_file_name, gs_blob, **args)
 
 
