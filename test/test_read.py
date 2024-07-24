@@ -1,7 +1,6 @@
 import gzip
-import io
 import subprocess
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import gs_fastcopy
 
@@ -20,9 +19,9 @@ def subprocess_run_mock(*args, **kwargs):
                 gzip.compress(JSON_STR) if commands[4].endswith(".gz") else JSON_STR
             )
             f.write(contents)
-        return ""
+        return subprocess.CompletedProcess(args, 0, b"", None)
     else:
-        builtin_run(*args, **kwargs)
+        return builtin_run(*args, **kwargs)
 
 
 @patch.object(gs_fastcopy.subprocess, "run", new_callable=lambda: subprocess_run_mock)
