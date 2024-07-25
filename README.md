@@ -60,6 +60,12 @@ with gs_fastcopy.read('gs://my-bucket/my-file.npz.gz') as f:
 
 ## Caveats & limitations
 
+* **You need a `__main__` guard.**
+
+  Subprocesses spawned during parallel processing re-interpret the main script.  This is bad if the main script then spawns its own subprocesses…
+
+  See also [gs-fastcopy-python#5](https://github.com/redwoodconsulting-io/gs-fastcopy-python/issues/5) with a further note on freezing scripts into executables.
+
 * **You need a filesystem.**
 
   Because `gs_fastcopy` uses tools that work with files, it must be able to read/write a filesystem, in particular temporary files as set up by `tempfile.TemporaryDirectory()` [[python docs](https://docs.python.org/3/library/tempfile.html#tempfile.TemporaryDirectory)].
