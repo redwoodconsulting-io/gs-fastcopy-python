@@ -20,7 +20,7 @@ from google.cloud.storage import transfer_manager
 
 
 @contextmanager
-def read(gs_uri):
+def read(gs_uri, billing_project=None):
     """
     Context manager for reading a file from Google Cloud Storage.
 
@@ -46,16 +46,20 @@ def read(gs_uri):
     space for the compressed file, and the decompressed file, together.
 
     :param gs_uri: The Google Cloud Storage URI to read from.
+    :param billing_project: The billing project for the transfer (default: app default credentials quota project).
     """
     with tempfile.TemporaryDirectory() as tmp:
         buffer_file_name = os.path.join(
             tmp, "download.gz" if gs_uri.endswith(".gz") else "download"
         )
 
+        gcloud_cmd = ["gcloud", "storage", "cp"]
+        if billing_project:
+            gcloud_cmd += ["--billing-project", billing_project]
+        gcloud_cmd += [gs_uri, buffer_file_name]
+
         result = subprocess.run(
-            ["gcloud", "storage", "cp", gs_uri, buffer_file_name],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE,
+            gcloud_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE
         )
 
         # TODO: handle errors better than this
@@ -90,7 +94,7 @@ def read(gs_uri):
 
 
 @contextmanager
-def write(gs_uri, max_workers=None, chunk_size=None):
+def write(gs_uri, max_workers=None, chunk_size=None, billing_project=None):
     """
     Context manager for writing a file to Google Cloud Storage.
 
@@ -116,6 +120,7 @@ def write(gs_uri, max_workers=None, chunk_size=None):
     :param gs_uri: The Google Cloud Storage URI to write to.
     :param max_workers: The maximum number of workers to use. None for default (available CPUs).
     :param chunk_size: The size of each chunk to upload. None for default.
+    :param billing_project: The billing project for the transfer (default: app default credentials quota project).
     """
 
     if max_workers is None:
@@ -159,7 +164,12 @@ def write(gs_uri, max_workers=None, chunk_size=None):
 
         # Parse gs_uri into a blob
         client = storage.Client()
-        gs_blob = storage.Blob.from_string(gs_uri, client=client)
+        parsed_uri = storage.Blob.from_string(gs_uri, client=client)
+        if billing_project:
+            bucket = client.bucket(parsed_uri.bucket.name, user_project=billing_project)
+        else:
+            bucket = client.bucket(parsed_uri.bucket.name)
+        gs_blob = storage.Blob(parsed_uri.name, bucket)
 
         # TODO: handle errors in transfer_manager
         transfer_manager.upload_chunks_concurrently(buffer_file_name, gs_blob, **args)

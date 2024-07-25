@@ -1,12 +1,11 @@
 import gzip
-import subprocess
-from unittest.mock import ANY, MagicMock, patch
+from unittest.mock import ANY, patch
+
+from callee import Attrs
 
 import gs_fastcopy
 
 JSON_STR = b'{"A": 3}'
-
-builtin_run = subprocess.run
 
 
 # This intercepts the upload API call to gcloud storage,
@@ -90,4 +89,22 @@ def test_write_custom_workers(mock_upload):
         ANY,
         ANY,
         max_workers=16,
+    )
+
+
+@patch.object(
+    gs_fastcopy.transfer_manager,
+    "upload_chunks_concurrently",
+)
+def test_write_billing_project(mock_upload):
+    with gs_fastcopy.write("gs://my-bucket/my-file.json", billing_project="test") as f:
+        f.write(JSON_STR)
+
+    mock_upload.assert_called_once_with(
+        ANY,
+        Attrs(
+            name="my-file.json",
+            bucket=Attrs(name="my-bucket", user_project="test"),
+        ),
+        max_workers=ANY,
     )
