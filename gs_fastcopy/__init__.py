@@ -45,28 +45,29 @@ def read(gs_uri, billing_project=None):
     process, not streaming in memory. This means you need enough disk
     space for the compressed file, and the decompressed file, together.
 
+    If the gs_uri does not begin with 'gs://', it is assumed to be a
+    local file path. It will still be decompressed for reading if the
+    filename ends with '.gz'.
+
     :param gs_uri: The Google Cloud Storage URI to read from.
     :param billing_project: The billing project for the transfer (default: app default credentials quota project).
     """
+    # If true, don't delete the compressed file after decompression.
+    keep_archive = False
+
     with tempfile.TemporaryDirectory() as tmp:
         buffer_file_name = os.path.join(
             tmp, "download.gz" if gs_uri.endswith(".gz") else "download"
         )
 
-        gcloud_cmd = ["gcloud", "storage", "cp"]
-        if billing_project:
-            gcloud_cmd += ["--billing-project", billing_project]
-        gcloud_cmd += [gs_uri, buffer_file_name]
-
-        result = subprocess.run(
-            gcloud_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE
-        )
-
-        # TODO: handle errors better than this
-        if result.returncode != 0:
-            raise Exception(
-                f"Failed to download file from {gs_uri}: stderr: {result.stderr}"
-            )
+        if gs_uri.startswith("gs://"):
+            _download_gs_uri(gs_uri, buffer_file_name, billing_project)
+        else:
+            # Create a symlink to the local file, to avoid copying,
+            # while reusing the decompression code. Note that we
+            # add --keep to not delete the file after decompression.
+            keep_archive = True
+            os.symlink(gs_uri, buffer_file_name)
 
         # If necessary, decompress the file before reading.
         if buffer_file_name.endswith(".gz"):
@@ -74,8 +75,15 @@ def read(gs_uri, billing_project=None):
             # much faster when hardware is available.
             tool = "unpigz" if shutil.which("unpigz") else "gunzip"
 
+            # See notes for keep_archive=True
+            command = (
+                [tool, "--keep", "--force", buffer_file_name]
+                if keep_archive
+                else [tool, buffer_file_name]
+            )
+
             result = subprocess.run(
-                [tool, buffer_file_name],
+                command,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.PIPE,
             )
@@ -185,3 +193,20 @@ def _get_available_cpus():
         return len(os.sched_getaffinity(0))
     except AttributeError:
         return os.cpu_count()
+
+
+def _download_gs_uri(gs_uri, buffer_file_name, billing_project=None):
+    gcloud_cmd = ["gcloud", "storage", "cp"]
+    if billing_project:
+        gcloud_cmd += ["--billing-project", billing_project]
+    gcloud_cmd += [gs_uri, buffer_file_name]
+
+    result = subprocess.run(
+        gcloud_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE
+    )
+
+    # TODO: handle errors better than this
+    if result.returncode != 0:
+        raise Exception(
+            f"Failed to download file from {gs_uri}: stderr: {result.stderr}"
+        )
