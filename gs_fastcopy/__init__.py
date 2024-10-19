@@ -23,6 +23,8 @@ from google.cloud.storage import transfer_manager
 def read(gs_uri, billing_project=None):
     """
     Context manager for reading a file from Google Cloud Storage.
+    Compresses and decompresses files on the fly, if necessary.
+    Also supports local files.
 
     Usage example, reading a numpy npz file:
 
@@ -44,10 +46,6 @@ def read(gs_uri, billing_project=None):
     reading. Note that the decompression is performed in an external
     process, not streaming in memory. This means you need enough disk
     space for the compressed file, and the decompressed file, together.
-
-    If the gs_uri does not begin with 'gs://', it is assumed to be a
-    local file path. It will still be decompressed for reading if the
-    filename ends with '.gz'.
 
     :param gs_uri: The Google Cloud Storage URI to read from.
     :param billing_project: The billing project for the transfer (default: app default credentials quota project).
@@ -105,6 +103,8 @@ def read(gs_uri, billing_project=None):
 def write(gs_uri, max_workers=None, chunk_size=None, billing_project=None):
     """
     Context manager for writing a file to Google Cloud Storage.
+    Compresses and decompresses files on the fly, if necessary.
+    Also supports local files.
 
     Usage example, writing a numpy npz file:
 
@@ -166,21 +166,14 @@ def write(gs_uri, max_workers=None, chunk_size=None, billing_project=None):
             # Add the '.gz' extension to the filename (like the tools do)
             buffer_file_name += ".gz"
 
-        args = {"max_workers": max_workers}
-        if chunk_size is not None:
-            args["chunk_size"] = chunk_size
-
-        # Parse gs_uri into a blob
-        client = storage.Client()
-        parsed_uri = storage.Blob.from_string(gs_uri, client=client)
-        if billing_project:
-            bucket = client.bucket(parsed_uri.bucket.name, user_project=billing_project)
+        if gs_uri.startswith("gs://"):
+            _write_gs_uri(
+                buffer_file_name, gs_uri, max_workers, chunk_size, billing_project
+            )
         else:
-            bucket = client.bucket(parsed_uri.bucket.name)
-        gs_blob = storage.Blob(parsed_uri.name, bucket)
-
-        # TODO: handle errors in transfer_manager
-        transfer_manager.upload_chunks_concurrently(buffer_file_name, gs_blob, **args)
+            # If the URI is not a gs:// URI, it's a local file path.
+            # In this case, we can just move the file to the destination.
+            shutil.move(buffer_file_name, gs_uri)
 
 
 # Helper function to get the number of available CPUs.
@@ -210,3 +203,21 @@ def _download_gs_uri(gs_uri, buffer_file_name, billing_project=None):
         raise Exception(
             f"Failed to download file from {gs_uri}: stderr: {result.stderr}"
         )
+
+
+def _write_gs_uri(buffer_file_name, gs_uri, max_workers, chunk_size, billing_project):
+    args = {"max_workers": max_workers}
+    if chunk_size is not None:
+        args["chunk_size"] = chunk_size
+
+    # Parse gs_uri into a blob
+    client = storage.Client()
+    parsed_uri = storage.Blob.from_string(gs_uri, client=client)
+    if billing_project:
+        bucket = client.bucket(parsed_uri.bucket.name, user_project=billing_project)
+    else:
+        bucket = client.bucket(parsed_uri.bucket.name)
+    gs_blob = storage.Blob(parsed_uri.name, bucket)
+
+    # TODO: handle errors in transfer_manager
+    transfer_manager.upload_chunks_concurrently(buffer_file_name, gs_blob, **args)
