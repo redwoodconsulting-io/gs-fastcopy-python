@@ -1,4 +1,5 @@
 import gzip
+import os
 import subprocess
 import tempfile
 from unittest.mock import ANY, patch
@@ -41,9 +42,11 @@ def test_read_local_no_compression():
 
         with gs_fastcopy.read(tmp_file.name) as f:
             result = f.read()
+            assert result == JSON_STR
 
-        with open(tmp_file.name, "rb") as f:
-            assert result == f.read()
+        with gs_fastcopy.read(os.path.relpath(tmp_file.name)) as f:
+            result = f.read()
+            assert result == JSON_STR
 
 
 @patch.object(gs_fastcopy.subprocess, "run", new_callable=lambda: subprocess_run_mock)
@@ -61,10 +64,11 @@ def test_read_local_with_compression():
 
         with gs_fastcopy.read(tmp_file.name) as f:
             result = f.read()
+            assert result == JSON_STR
 
-        # this will also make sure the file still exists
-        with gzip.open(tmp_file.name, "rb") as f:
-            assert result == f.read()
+        with gs_fastcopy.read(os.path.relpath(tmp_file.name)) as f:
+            result = f.read()
+            assert result == JSON_STR
 
 
 @patch.object(gs_fastcopy.subprocess, "run")

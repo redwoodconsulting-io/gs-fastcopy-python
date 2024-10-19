@@ -64,8 +64,9 @@ def read(gs_uri, billing_project=None):
             # Create a symlink to the local file, to avoid copying,
             # while reusing the decompression code. Note that we
             # add --keep to not delete the file after decompression.
+            # Note that we need the abspath to support relative uris.
             keep_archive = True
-            os.symlink(gs_uri, buffer_file_name)
+            os.symlink(os.path.abspath(gs_uri), buffer_file_name)
 
         # If necessary, decompress the file before reading.
         if buffer_file_name.endswith(".gz"):
