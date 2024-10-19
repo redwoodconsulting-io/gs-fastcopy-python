@@ -1,4 +1,5 @@
 import gzip
+import tempfile
 from unittest.mock import ANY, patch
 
 from callee import Attrs
@@ -54,6 +55,24 @@ def test_write_with_compression(mock_upload):
         f.write(JSON_STR)
 
     assert result[0] == JSON_STR
+
+
+def test_write_local_no_compression():
+    with tempfile.NamedTemporaryFile() as tmp_file:
+        with gs_fastcopy.write(tmp_file.name) as f:
+            f.write(JSON_STR)
+
+        with open(tmp_file.name, "rb") as f:
+            assert f.read() == JSON_STR
+
+
+def test_write_local_with_compression():
+    with tempfile.NamedTemporaryFile(suffix=".gz") as tmp_file:
+        with gs_fastcopy.write(tmp_file.name) as f:
+            f.write(JSON_STR)
+
+        with gzip.open(tmp_file.name, "rb") as f:
+            assert f.read() == JSON_STR
 
 
 @patch.object(

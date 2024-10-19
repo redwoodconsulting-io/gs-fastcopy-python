@@ -23,6 +23,8 @@ from google.cloud.storage import transfer_manager
 def read(gs_uri, billing_project=None):
     """
     Context manager for reading a file from Google Cloud Storage.
+    Compresses and decompresses files on the fly, if necessary.
+    Also supports local files.
 
     Usage example, reading a numpy npz file:
 
@@ -48,25 +50,22 @@ def read(gs_uri, billing_project=None):
     :param gs_uri: The Google Cloud Storage URI to read from.
     :param billing_project: The billing project for the transfer (default: app default credentials quota project).
     """
+    # If true, don't delete the compressed file after decompression.
+    keep_archive = False
+
     with tempfile.TemporaryDirectory() as tmp:
         buffer_file_name = os.path.join(
             tmp, "download.gz" if gs_uri.endswith(".gz") else "download"
         )
 
-        gcloud_cmd = ["gcloud", "storage", "cp"]
-        if billing_project:
-            gcloud_cmd += ["--billing-project", billing_project]
-        gcloud_cmd += [gs_uri, buffer_file_name]
-
-        result = subprocess.run(
-            gcloud_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE
-        )
-
-        # TODO: handle errors better than this
-        if result.returncode != 0:
-            raise Exception(
-                f"Failed to download file from {gs_uri}: stderr: {result.stderr}"
-            )
+        if gs_uri.startswith("gs://"):
+            _download_gs_uri(gs_uri, buffer_file_name, billing_project)
+        else:
+            # Create a symlink to the local file, to avoid copying,
+            # while reusing the decompression code. Note that we
+            # add --keep to not delete the file after decompression.
+            keep_archive = True
+            os.symlink(gs_uri, buffer_file_name)
 
         # If necessary, decompress the file before reading.
         if buffer_file_name.endswith(".gz"):
@@ -74,8 +73,15 @@ def read(gs_uri, billing_project=None):
             # much faster when hardware is available.
             tool = "unpigz" if shutil.which("unpigz") else "gunzip"
 
+            # See notes for keep_archive=True
+            command = (
+                [tool, "--keep", "--force", buffer_file_name]
+                if keep_archive
+                else [tool, buffer_file_name]
+            )
+
             result = subprocess.run(
-                [tool, buffer_file_name],
+                command,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.PIPE,
             )
@@ -97,6 +103,8 @@ def read(gs_uri, billing_project=None):
 def write(gs_uri, max_workers=None, chunk_size=None, billing_project=None):
     """
     Context manager for writing a file to Google Cloud Storage.
+    Compresses and decompresses files on the fly, if necessary.
+    Also supports local files.
 
     Usage example, writing a numpy npz file:
 
@@ -158,21 +166,14 @@ def write(gs_uri, max_workers=None, chunk_size=None, billing_project=None):
             # Add the '.gz' extension to the filename (like the tools do)
             buffer_file_name += ".gz"
 
-        args = {"max_workers": max_workers}
-        if chunk_size is not None:
-            args["chunk_size"] = chunk_size
-
-        # Parse gs_uri into a blob
-        client = storage.Client()
-        parsed_uri = storage.Blob.from_string(gs_uri, client=client)
-        if billing_project:
-            bucket = client.bucket(parsed_uri.bucket.name, user_project=billing_project)
+        if gs_uri.startswith("gs://"):
+            _write_gs_uri(
+                buffer_file_name, gs_uri, max_workers, chunk_size, billing_project
+            )
         else:
-            bucket = client.bucket(parsed_uri.bucket.name)
-        gs_blob = storage.Blob(parsed_uri.name, bucket)
-
-        # TODO: handle errors in transfer_manager
-        transfer_manager.upload_chunks_concurrently(buffer_file_name, gs_blob, **args)
+            # If the URI is not a gs:// URI, it's a local file path.
+            # In this case, we can just move the file to the destination.
+            shutil.move(buffer_file_name, gs_uri)
 
 
 # Helper function to get the number of available CPUs.
@@ -185,3 +186,38 @@ def _get_available_cpus():
         return len(os.sched_getaffinity(0))
     except AttributeError:
         return os.cpu_count()
+
+
+def _download_gs_uri(gs_uri, buffer_file_name, billing_project=None):
+    gcloud_cmd = ["gcloud", "storage", "cp"]
+    if billing_project:
+        gcloud_cmd += ["--billing-project", billing_project]
+    gcloud_cmd += [gs_uri, buffer_file_name]
+
+    result = subprocess.run(
+        gcloud_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE
+    )
+
+    # TODO: handle errors better than this
+    if result.returncode != 0:
+        raise Exception(
+            f"Failed to download file from {gs_uri}: stderr: {result.stderr}"
+        )
+
+
+def _write_gs_uri(buffer_file_name, gs_uri, max_workers, chunk_size, billing_project):
+    args = {"max_workers": max_workers}
+    if chunk_size is not None:
+        args["chunk_size"] = chunk_size
+
+    # Parse gs_uri into a blob
+    client = storage.Client()
+    parsed_uri = storage.Blob.from_string(gs_uri, client=client)
+    if billing_project:
+        bucket = client.bucket(parsed_uri.bucket.name, user_project=billing_project)
+    else:
+        bucket = client.bucket(parsed_uri.bucket.name)
+    gs_blob = storage.Blob(parsed_uri.name, bucket)
+
+    # TODO: handle errors in transfer_manager
+    transfer_manager.upload_chunks_concurrently(buffer_file_name, gs_blob, **args)
